@@ -291,20 +291,37 @@ async function postInvitation(email) {
 
 async function patchApproval(rollNo, action) {
     const url = `${APPROVAL_API_BASE.replace(/\/$/, '')}/${encodeURIComponent(String(rollNo))}/`;
+
     const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, secret: INVITE_API_SECRET }),
+        body: JSON.stringify({
+            action: action === 'approve' ? 'approve' : 'reject',
+            secret: INVITE_API_SECRET,
+        }),
     });
+
     let payload = null;
     try { payload = await res.json(); } catch { payload = null; }
     return { ok: res.ok, payload };
 }
 
+
 async function getPending() {
-    const url = buildPendingCheckUrl();
-    if (!url) return [];
-    const res = await fetch(url);
+    const base =
+        PENDING_CHECK_URL && PENDING_CHECK_URL.trim()
+            ? PENDING_CHECK_URL.trim()
+            : (() => {
+                const u = new URL(INVITE_API_URL);
+                u.pathname = '/api/members/pending';
+                u.search = '';
+                return u.toString();
+            })();
+
+    const url = new URL(base);
+    if (INVITE_API_SECRET) url.searchParams.set('secret', INVITE_API_SECRET);
+
+    const res = await fetch(url.toString(), { method: 'GET' });
     let data = null;
     try { data = await res.json(); } catch { data = null; }
     if (Array.isArray(data)) return data;
