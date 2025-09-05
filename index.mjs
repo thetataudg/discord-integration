@@ -545,33 +545,48 @@ function digestPending(items) {
 async function pollPendingInvitesAndNotify() {
     try {
         const items = await getPending();
-        if (!items || !items.length) return; // silent when 0
+        if (!items || !items.length) return;
 
+        // avoid reposting the same list every tick
         const digest = digestPending(items);
-        if (digest === lastPendingDigest) return; // avoid spamming the same list
+        if (digest === lastPendingDigest) return;
         lastPendingDigest = digest;
 
         const guild = await client.guilds.fetch(GUILD_ID);
-        const adminChan = process.env.ADMIN_CHANNEL_ID ? await guild.channels.fetch(process.env.ADMIN_CHANNEL_ID).catch(() => null) : null;
+        const adminChan = process.env.ADMIN_CHANNEL_ID
+            ? await guild.channels.fetch(process.env.ADMIN_CHANNEL_ID).catch(() => null)
+            : null;
         if (!adminChan) return;
 
-        // Build up to 5 entries with action rows
-        const top = items.slice(0, 5);
-        const embed = new EmbedBuilder()
-            .setColor(THEME_GOLD)
-            .setTitle('⏰ Pending Invitations Check')
-            .setDescription(`There ${items.length === 1 ? 'is' : 'are'} **${items.length}** pending invitation${items.length === 1 ? '' : 's'}.`)
-            .addFields(top.map((it, i) => ({ name: `#${i + 1} — ${it.rollNo ?? '—'}`, value: formatPendingItem(it), inline: false })))
-            .setTimestamp();
+        const mention = ADMIN_ROLE_ID ? `<@&${ADMIN_ROLE_ID}> ` : '';
+        await adminChan.send({
+            content: `${mention}Pending invitations update — **${items.length}** waiting.`,
+        });
 
-        // Build rows (Discord max 5 rows per message)
-        const rows = top.map(it => approveRejectRow(it.rollNo ?? 'unknown', it.email || it.emailAddress));
+        // one embed + one row of buttons per user
+        for (const it of items) {
+            const displayName =
+                [it.fName, it.lName].filter(Boolean).join(' ') ||
+                it.email ||
+                it.emailAddress ||
+                'Pending Member';
 
-        await adminChan.send({ content: ADMIN_ROLE_ID ? `<@&${ADMIN_ROLE_ID}> Pending invitation report` : 'Pending invitation report', embeds: [embed], components: rows });
+            const embed = new EmbedBuilder()
+                .setColor(THEME_GOLD)
+                .setTitle(`⏳ Pending — ${displayName}`)
+                .setDescription(formatPendingItem(it))
+                .setFooter({ text: `Roll # ${it.rollNo ?? '—'}` })
+                .setTimestamp();
+
+            const row = approveRejectRow(it.rollNo ?? 'unknown', it.email || it.emailAddress);
+
+            await adminChan.send({ embeds: [embed], components: [row] });
+        }
     } catch (e) {
         console.error('Pending poll error:', e);
     }
 }
+
 
 function schedulePendingChecker() {
     pollPendingInvitesAndNotify();
