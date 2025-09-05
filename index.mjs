@@ -289,28 +289,44 @@ async function postInvitation(email) {
     return { ok: res.ok, payload };
 }
 
+// PATCH /api/members/pending/:rollNo/  { action, secret }
 async function patchApproval(rollNo, action) {
     const url = `${APPROVAL_API_BASE.replace(/\/$/, '')}/${encodeURIComponent(String(rollNo))}/`;
 
-    const bodyStr = JSON.stringify({
+    const bodyObj = {
         action: action === 'approve' ? 'approve' : 'reject',
         secret: INVITE_API_SECRET,
-    });
+    };
+
+    const bodyBuf = Buffer.from(JSON.stringify(bodyObj), 'utf8');
 
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
-            'Content-Type': 'application/json; charset=utf-8',
             'Accept': 'application/json',
-            'Content-Length': Buffer.byteLength(bodyStr).toString(), // <- important
+            'Content-Type': 'application/json; charset=utf-8',
         },
-        body: bodyStr,
+        body: bodyBuf,
+        duplex: 'half', // helps Node 18’s undici with bodies on non-GET
     });
 
     let payload = null;
     try { payload = await res.json(); } catch { payload = null; }
     return { ok: res.ok, payload };
 }
+
+async function safePatchApproval(rollNo, action) {
+    try {
+        return await patchApproval(rollNo, action);
+    } catch (e) {
+        if (String(e?.code) === 'UND_ERR_REQ_CONTENT_LENGTH_MISMATCH') {
+            await new Promise(r => setTimeout(r, 200));
+            return await patchApproval(rollNo, action);
+        }
+        throw e;
+    }
+}
+
 
 async function getPending() {
     const base =
