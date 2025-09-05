@@ -44,6 +44,8 @@
 // Run: node index.mjs
 
 import 'dotenv/config';
+import axios from 'axios';
+
 import {
     ActionRowBuilder,
     ButtonBuilder,
@@ -86,6 +88,15 @@ if (!TOKEN || !GUILD_ID || !MOD_ROLE_ID || !PENDING_ROLE_ID || !WELCOME_CARDS_CH
     console.error('Missing required env vars. Check the header comments.');
     process.exit(1);
 }
+
+function maskSecret(jsonStr) {
+    // replaces the secret value with **** keeping only last 4 chars
+    return String(jsonStr).replace(
+        /("secret"\s*:\s*")([^"]*)(")/,
+        (_, a, b, c) => a + (b ? b.replace(/.(?=.{4})/g, '•') : '') + c
+    );
+}
+
 
 // -------------- Client --------------
 const client = new Client({
@@ -289,7 +300,6 @@ async function postInvitation(email) {
     return { ok: res.ok, payload };
 }
 
-// PATCH /api/members/pending/:rollNo/  { action, secret }
 async function patchApproval(rollNo, action) {
     const url = `${APPROVAL_API_BASE.replace(/\/$/, '')}/${encodeURIComponent(String(rollNo))}/`;
 
@@ -297,23 +307,38 @@ async function patchApproval(rollNo, action) {
         action: action === 'approve' ? 'approve' : 'reject',
         secret: INVITE_API_SECRET,
     };
+    const bodyStr = JSON.stringify(bodyObj);
 
-    const bodyBuf = Buffer.from(JSON.stringify(bodyObj), 'utf8');
+    // ---- DEBUG LOGS ----
+    console.log('--- PATCH /pending/:rollNo ---');
+    console.log('URL :', url);
+    console.log('HEAD:', { 'Accept': 'application/json', 'Content-Type': 'application/json; charset=utf-8' });
+    console.log('BODY:', maskSecret(bodyStr));
+    // --------------------
 
+    // Use a Buffer body (lets undici set Content-Length correctly)
     const res = await fetch(url, {
         method: 'PATCH',
         headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json; charset=utf-8',
         },
-        body: bodyBuf,
-        duplex: 'half', // helps Node 18’s undici with bodies on non-GET
+        body: Buffer.from(bodyStr, 'utf8'),
+        duplex: 'half',
     });
 
     let payload = null;
     try { payload = await res.json(); } catch { payload = null; }
+
+    // ---- RESPONSE LOGS ----
+    console.log('STATUS:', res.status, res.statusText);
+    console.log('RESP  :', payload);
+    // -----------------------
+
     return { ok: res.ok, payload };
 }
+
+
 
 async function safePatchApproval(rollNo, action) {
     try {
