@@ -292,20 +292,25 @@ async function postInvitation(email) {
 async function patchApproval(rollNo, action) {
     const url = `${APPROVAL_API_BASE.replace(/\/$/, '')}/${encodeURIComponent(String(rollNo))}/`;
 
+    const bodyStr = JSON.stringify({
+        action: action === 'approve' ? 'approve' : 'reject',
+        secret: INVITE_API_SECRET,
+    });
+
     const res = await fetch(url, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            action: action === 'approve' ? 'approve' : 'reject',
-            secret: INVITE_API_SECRET,
-        }),
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(bodyStr).toString(), // <- important
+        },
+        body: bodyStr,
     });
 
     let payload = null;
     try { payload = await res.json(); } catch { payload = null; }
     return { ok: res.ok, payload };
 }
-
 
 async function getPending() {
     const base =
