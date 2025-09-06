@@ -300,45 +300,38 @@ async function postInvitation(email) {
     return { ok: res.ok, payload };
 }
 
+// PATCH /api/members/pending/:rollNo/  { action, secret }
 async function patchApproval(rollNo, action) {
     const url = `${APPROVAL_API_BASE.replace(/\/$/, '')}/${encodeURIComponent(String(rollNo))}/`;
 
-    const bodyObj = {
+    const body = {
         action: action === 'approve' ? 'approve' : 'reject',
         secret: INVITE_API_SECRET,
     };
-    const bodyStr = JSON.stringify(bodyObj);
 
     // ---- DEBUG LOGS ----
     console.log('--- PATCH /pending/:rollNo ---');
     console.log('URL :', url);
-    console.log('HEAD:', { 'Accept': 'application/json', 'Content-Type': 'application/json; charset=utf-8' });
-    console.log('BODY:', maskSecret(bodyStr));
+    console.log('HEAD:', { 'Content-Type': 'application/json' });
+    // mask secret in logs
+    const masked = JSON.stringify(body).replace(
+        /("secret"\s*:\s*")([^"]*)(")/,
+        (_, a, b, c) => a + (b ? b.replace(/.(?=.{4})/g, '•') : '') + c
+    );
+    console.log('BODY:', masked);
     // --------------------
 
-    // Use a Buffer body (lets undici set Content-Length correctly)
-    const res = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json; charset=utf-8',
-        },
-        body: Buffer.from(bodyStr, 'utf8'),
-        duplex: 'half',
+    const res = await axios.patch(url, body, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        // If your host needs TLS SNI tweaks or a proxy, you can configure here
     });
 
-    let payload = null;
-    try { payload = await res.json(); } catch { payload = null; }
+    console.log('STATUS:', res.status);
+    console.log('RESP  :', res.data);
 
-    // ---- RESPONSE LOGS ----
-    console.log('STATUS:', res.status, res.statusText);
-    console.log('RESP  :', payload);
-    // -----------------------
-
-    return { ok: res.ok, payload };
+    return { ok: res.status >= 200 && res.status < 300, payload: res.data };
 }
-
-
 
 async function safePatchApproval(rollNo, action) {
     try {
