@@ -10,11 +10,20 @@
     "Merchandise": "1201723512578908200",
     "New Member Education": "778044300999131156",
     "Outreach": "1473806214541611149",
-    "Professionalism": "778051941535973377"
+    "Professionalism": "778051941535973377",
+    "Project": "1280587911170887742",
+    "Retreat": "1201722206703325254",
+    "Rush": "778055598264156180",
+    "Service": "778051915262984192",
+    "Social Media": "1215157745779474492",
+    "Technology": "1210424206538313779"
   },
-  "statusNameToRoleId": {},
-  "ecouncilRoleId": "",
-  "committeeHeadRoleId": "",
+  "statusNameToRoleId": {
+    "Active": "778043346340806666",
+    "Alumni": "778043594632069150"
+  },
+  "ecouncilRoleId": "778044125441425458",
+  "committeeHeadRoleId": "1201721385844478012",
   "dbIdToDiscord": {
     "68e5792f68fc342e04cc8170": {
       "userId": "306889102593359873",

@@ -463,10 +463,10 @@ async function renderMappingSession(interaction, sessionId) {
 
 async function startMappingSession(interaction, kind) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
     let items = [];
     if (kind === 'committee') {
         const discovered = await discoverCommitteeNamesFromMembers();
@@ -505,12 +505,12 @@ async function startMappingSession(interaction, kind) {
 
 async function handleRoleMapList(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
 
     const lines = allManagedMappingLines();
     if (!lines.length) {
-        return interaction.reply({ content: 'No role mappings have been saved yet.', flags: 64 });
+        return interaction.reply({ content: 'No role mappings have been saved yet.' });
     }
 
     const embeds = chunkLines(lines).map((chunk, index) =>
@@ -520,12 +520,12 @@ async function handleRoleMapList(interaction) {
             .setDescription(chunk)
     );
 
-    return interaction.reply({ embeds, flags: 64 });
+    return interaction.reply({ embeds });
 }
 
 async function handleRoleMapRemove(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
 
     const name = interaction.options.getString('name', true).trim();
@@ -538,7 +538,7 @@ async function handleRoleMapRemove(interaction) {
 
     return interaction.reply({
         content: removed ? `Removed the mapping for **${name}**.` : `No mapping was found for **${name}**.`,
-        flags: 64,
+        
     });
 }
 
@@ -1016,10 +1016,10 @@ function logRoleSyncSummary(summary, source) {
 
 async function handleSyncCommand(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
     const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
     const summary = await runFullRoleSync(guild);
     logRoleSyncSummary(summary, 'manual');
@@ -1030,7 +1030,7 @@ async function handleSyncCommand(interaction) {
 
 async function handleWhoisCommand(interaction) {
     const user = interaction.options.getUser('user', true);
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
 
     const members = await fetchMembersApi();
     const stored = getByUserId(user.id);
@@ -1048,7 +1048,7 @@ async function handleWhoisCommand(interaction) {
 
 async function handleLookupCommand(interaction) {
     const query = interaction.options.getString('query', true).trim();
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
 
     const members = await fetchMembersApi();
     const normalized = query.toLowerCase();
@@ -1067,13 +1067,13 @@ async function handleLookupCommand(interaction) {
 
 async function handleBootstrapCommand(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
     if (isBootstrapCompleted()) {
-        return interaction.reply({ content: 'Bootstrap has already been run once.', flags: 64 });
+        return interaction.reply({ content: 'Bootstrap has already been run once.' });
     }
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
     const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
     const members = await fetchMembersApi();
     const guildMembers = await guild.members.fetch();
@@ -1123,10 +1123,10 @@ async function handleBootstrapCommand(interaction) {
 
 async function handleReportCommand(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+        return interaction.reply({ content: 'You lack permission to do this.' });
     }
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply();
     const members = await fetchMembersApi();
 
     // ECouncil members
@@ -1230,7 +1230,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
                 }
                 if (interaction.user.id !== session.userId) {
-                    return interaction.reply({ content: 'This mapping session is not yours.', flags: 64 });
+                    return interaction.reply({ content: 'This mapping session is not yours.' });
                 }
 
                 const current = session.items[session.index];
@@ -1266,7 +1266,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
                 }
                 if (interaction.user.id !== session.userId) {
-                    return interaction.reply({ content: 'This mapping session is not yours.', flags: 64 });
+                    return interaction.reply({ content: 'This mapping session is not yours.' });
                 }
 
                 if (parts[1] === 'done') {
@@ -1306,7 +1306,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (ns === 'verify' && action === 'start') {
                 const userId = parts[2];
                 if (userId !== interaction.user.id) {
-                    return interaction.reply({ content: 'This button is not for you.', flags: 64 });
+                    return interaction.reply({ content: 'This button is not for you.' });
                 }
                 return interaction.showModal(emailModal(userId));
             }
@@ -1319,7 +1319,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const hasPerm =
                     hasAdminRole || member.permissions.has(PermissionsBitField.Flags.ManageGuild);
                 if (!hasPerm)
-                    return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+                    return interaction.reply({ content: 'You lack permission to do this.' });
 
                 const pendingId = parts[2]; // DB id
                 const emailFromButton = parts[3] && parts[3] !== 'none' ? parts[3] : null;
@@ -1420,19 +1420,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 if (userId !== interaction.user.id) return;
                 const email = interaction.fields.getTextInputValue('email').trim();
                 if (!isValidEmail(email)) {
-                    return interaction.reply({ content: 'Please enter a valid email.', flags: 64 });
+                    return interaction.reply({ content: 'Please enter a valid email.' });
                 }
 
                 if (getByEmail(email)) {
                     return interaction.reply({
                         content: 'That email is already registered. Please contact a mod if you need help.',
-                        flags: 64,
+                        
                     });
                 }
 
                 const channelId = interaction.channel?.id || null;
 
-                await interaction.deferReply({ flags: 64 });
+                await interaction.deferReply();
                 const { ok, payload } = await postInvitation(email);
 
                 // Persist: email <-> discord user, and the invite id returned
@@ -1472,7 +1472,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.error('Interaction error:', err);
         if (interaction.isRepliable()) {
             try {
-                await interaction.reply({ content: 'Something went wrong. Try again.', flags: 64 });
+                await interaction.reply({ content: 'Something went wrong. Try again.' });
             } catch { }
         }
     }
