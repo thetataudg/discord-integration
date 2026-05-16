@@ -36,6 +36,11 @@ function buildRoleMapCommand(name) {
         )
         .addSubcommand((subcommand) =>
             subcommand
+                .setName('marshal')
+                .setDescription('Map Marshal to a role')
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
                 .setName('committee-head')
                 .setDescription('Designate a single Committee Head role')
         )
@@ -51,7 +56,7 @@ function buildRoleMapCommand(name) {
                 .addStringOption((option) =>
                     option
                         .setName('name')
-                        .setDescription('Committee, status, or ECouncil name to remove')
+                    .setDescription('Committee, status, ECouncil, Marshal, or Committee Head name to remove')
                         .setRequired(true)
                 )
         );

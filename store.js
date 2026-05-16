@@ -13,6 +13,7 @@ let cache = {
     committeeNameToRoleId: {}, // committee name -> Discord role ID
     statusNameToRoleId: {},   // status string -> Discord role ID
     ecouncilRoleId: '',       // Discord role ID for ECouncil members
+    marshalRoleId: '',        // Discord role ID for ECouncil Marshal members
     committeeHeadRoleId: '',  // Discord role ID for Committee Head (single shared role)
     dbIdToDiscord: {},        // member DB _id -> { userId, email, channelId, savedAt }
     bootstrapCompleted: false,
@@ -193,6 +194,25 @@ export function removeEcouncilRole() {
     return true;
 }
 
+export function rememberMarshalRole(roleId) {
+    const value = String(roleId || '').trim();
+    if (!value) return false;
+    cache.marshalRoleId = value;
+    save();
+    return true;
+}
+
+export function getMarshalRoleId() {
+    return cache.marshalRoleId || '';
+}
+
+export function removeMarshalRole() {
+    if (!cache.marshalRoleId) return false;
+    cache.marshalRoleId = '';
+    save();
+    return true;
+}
+
 // Committee Head (single shared role for any member who chairs >=1 committee)
 export function rememberCommitteeHeadRole(roleId) {
     const value = String(roleId || '').trim();
@@ -219,6 +239,7 @@ export function getManagedRoleIds() {
         cache.committeeHeadRoleId,
         ...Object.values(cache.statusNameToRoleId).filter(Boolean),
         cache.ecouncilRoleId,
+        cache.marshalRoleId,
     ].filter(Boolean);
 }
 

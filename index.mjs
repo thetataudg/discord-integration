@@ -38,6 +38,9 @@ import {
     rememberEcouncilRole,
     getEcouncilRoleId,
     removeEcouncilRole,
+    rememberMarshalRole,
+    getMarshalRoleId,
+    removeMarshalRole,
     rememberCommitteeHeadRole,
     getCommitteeHeadRoleId,
     removeCommitteeHeadRole,
@@ -239,6 +242,11 @@ function ecouncilMappingSummaryLines() {
     return roleId ? [`• ECouncil -> <@&${roleId}>`] : [];
 }
 
+function marshalMappingSummaryLines() {
+    const roleId = getMarshalRoleId();
+    return roleId ? [`• Marshal -> <@&${roleId}>`] : [];
+}
+
 function committeeHeadMappingSummaryLines() {
     const roleId = getCommitteeHeadRoleId();
     return roleId ? [`• Committee Head -> <@&${roleId}>`] : [];
@@ -249,6 +257,7 @@ function allManagedMappingLines() {
         ...committeeMappingSummaryLines(),
         ...statusMappingSummaryLines(),
         ...ecouncilMappingSummaryLines(),
+        ...marshalMappingSummaryLines(),
         ...committeeHeadMappingSummaryLines(),
     ];
 }
@@ -283,6 +292,7 @@ function hasManagePermission(member) {
 function mappingKindLabel(kind) {
     if (kind === 'status') return 'status';
     if (kind === 'ecouncil') return 'ECouncil';
+    if (kind === 'marshal') return 'Marshal';
     if (kind === 'committee-head') return 'committee-head';
     return 'committee';
 }
@@ -298,6 +308,7 @@ function mappingItemsForKind(kind, members = []) {
         return [...statuses].sort((a, b) => a.localeCompare(b));
     }
     if (kind === 'ecouncil') return ['ECouncil'];
+    if (kind === 'marshal') return ['Marshal'];
     if (kind === 'committee-head') return ['Committee Head'];
     return [];
 }
@@ -305,6 +316,7 @@ function mappingItemsForKind(kind, members = []) {
 function sessionTitleForKind(kind) {
     if (kind === 'status') return 'Status Role Mapping';
     if (kind === 'ecouncil') return 'ECouncil Role Mapping';
+    if (kind === 'marshal') return 'Marshal Role Mapping';
     if (kind === 'committee-head') return 'Committee Head Role Mapping';
     return 'Committee Role Mapping';
 }
@@ -312,6 +324,7 @@ function sessionTitleForKind(kind) {
 function itemLabelForKind(kind, item) {
     if (kind === 'status') return `status **${item}**`;
     if (kind === 'ecouncil') return 'ECouncil';
+    if (kind === 'marshal') return 'Marshal';
     if (kind === 'committee-head') return 'Committee Head';
     return `committee **${item}**`;
 }
@@ -465,6 +478,8 @@ async function startMappingSession(interaction, kind) {
         items = discovered.filter((name) => !mapped.has(name));
     } else if (kind === 'ecouncil') {
         items = getEcouncilRoleId() ? [] : ['ECouncil'];
+    } else if (kind === 'marshal') {
+        items = getMarshalRoleId() ? [] : ['Marshal'];
     } else if (kind === 'committee-head') {
         items = getCommitteeHeadRoleId() ? [] : ['Committee Head'];
     }
@@ -517,8 +532,9 @@ async function handleRoleMapRemove(interaction) {
     const committeeRemoved = removeCommitteeMapping(name);
     const statusRemoved = removeStatusMapping(name);
     const ecouncilRemoved = name.toLowerCase() === 'ecouncil' ? removeEcouncilRole() : false;
+    const marshalRemoved = name.toLowerCase() === 'marshal' ? removeMarshalRole() : false;
     const committeeHeadRemoved = name.toLowerCase() === 'committee-head' ? removeCommitteeHeadRole() : false;
-    const removed = committeeRemoved || statusRemoved || ecouncilRemoved || committeeHeadRemoved;
+    const removed = committeeRemoved || statusRemoved || ecouncilRemoved || marshalRemoved || committeeHeadRemoved;
 
     return interaction.reply({
         content: removed ? `Removed the mapping for **${name}**.` : `No mapping was found for **${name}**.`,
@@ -530,7 +546,11 @@ async function handleRoleMapCommand(interaction) {
     const subcommand = interaction.options.getSubcommand(false);
     if (!subcommand || subcommand === 'committee' || subcommand === 'map') return startMappingSession(interaction, 'committee');
     if (subcommand === 'status') return startMappingSession(interaction, 'status');
-    if (subcommand === 'ecouncil' || subcommand === 'committee-head') return startMappingSession(interaction, subcommand === 'ecouncil' ? 'ecouncil' : 'committee-head');
+    if (subcommand === 'ecouncil' || subcommand === 'marshal' || subcommand === 'committee-head') {
+        if (subcommand === 'ecouncil') return startMappingSession(interaction, 'ecouncil');
+        if (subcommand === 'marshal') return startMappingSession(interaction, 'marshal');
+        return startMappingSession(interaction, 'committee-head');
+    }
     if (subcommand === 'list') return handleRoleMapList(interaction);
     if (subcommand === 'remove') return handleRoleMapRemove(interaction);
 }
@@ -769,7 +789,10 @@ async function syncMemberRoles(guildMember, apiMember) {
     }
 
     const ecouncilRoleId = getEcouncilRoleId();
-    if (apiMember.isECouncil && ecouncilRoleId) {
+    const marshalRoleId = getMarshalRoleId();
+    const ecouncilPosition = String(apiMember.ecouncilPosition || '').trim().toLowerCase();
+    const isMarshal = ecouncilPosition === 'marshal';
+    if (apiMember.isECouncil && !isMarshal && ecouncilRoleId) {
         if (!currentRoles.has(ecouncilRoleId)) {
             await guildMember.roles.add(ecouncilRoleId).catch(() => {});
             changes.added.push(ecouncilRoleId);
@@ -777,6 +800,16 @@ async function syncMemberRoles(guildMember, apiMember) {
     } else if (ecouncilRoleId && currentRoles.has(ecouncilRoleId)) {
         await guildMember.roles.remove(ecouncilRoleId).catch(() => {});
         changes.removed.push(ecouncilRoleId);
+    }
+
+    if (isMarshal && marshalRoleId) {
+        if (!currentRoles.has(marshalRoleId)) {
+            await guildMember.roles.add(marshalRoleId).catch(() => {});
+            changes.added.push(marshalRoleId);
+        }
+    } else if (marshalRoleId && currentRoles.has(marshalRoleId)) {
+        await guildMember.roles.remove(marshalRoleId).catch(() => {});
+        changes.removed.push(marshalRoleId);
     }
 
     // Committee Head role: single shared role for any member who chairs >= 1 committee
@@ -1118,6 +1151,7 @@ async function handleReportCommand(interaction) {
 
     const statusMapped = Object.keys(getAllStatusMappings() || {}).length > 0;
     const ecouncilRoleMapped = Boolean(getEcouncilRoleId());
+    const marshalRoleMapped = Boolean(getMarshalRoleId());
     const committeeHeadRoleMapped = Boolean(getCommitteeHeadRoleId());
 
     const ok = '✅';
@@ -1131,6 +1165,7 @@ async function handleReportCommand(interaction) {
             { name: 'Committee Chairs (from API)', value: chairsLines.length ? chairsLines.join('\n') : '-', inline: false },
             { name: 'Status Roles Mapped', value: statusMapped ? ok : no, inline: true },
             { name: 'ECouncil Role Mapped', value: ecouncilRoleMapped ? ok : no, inline: true },
+            { name: 'Marshal Role Mapped', value: marshalRoleMapped ? ok : no, inline: true },
             { name: 'Committee Head Role Mapped', value: committeeHeadRoleMapped ? ok : no, inline: true }
         )
         .setTimestamp();
@@ -1204,6 +1239,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     if (session.kind === 'committee') rememberCommitteeMapping(current, roleId);
                     if (session.kind === 'status') rememberStatusMapping(current, roleId);
                     if (session.kind === 'ecouncil') rememberEcouncilRole(roleId);
+                    if (session.kind === 'marshal') rememberMarshalRole(roleId);
                     if (session.kind === 'committee-head') rememberCommitteeHeadRole(roleId);
                 }
 
@@ -1234,8 +1270,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
 
                 if (parts[1] === 'done') {
-                    if ((session.kind === 'ecouncil' && !getEcouncilRoleId()) || (session.kind === 'committee-head' && !getCommitteeHeadRoleId())) {
-                        const label = session.kind === 'ecouncil' ? 'ECouncil' : 'Committee Head';
+                    if ((session.kind === 'ecouncil' && !getEcouncilRoleId()) || (session.kind === 'marshal' && !getMarshalRoleId()) || (session.kind === 'committee-head' && !getCommitteeHeadRoleId())) {
+                        const label = session.kind === 'ecouncil' ? 'ECouncil' : session.kind === 'marshal' ? 'Marshal' : 'Committee Head';
                         return interaction.update({ content: `Select a role before finishing the ${label} mapping session.`, components: buildMappingSessionComponents(sessionId, session), embeds: [buildMappingSessionEmbed(session)] });
                     }
                     finishMappingSession(sessionId);
