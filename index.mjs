@@ -1088,6 +1088,56 @@ async function handleBootstrapCommand(interaction) {
     );
 }
 
+async function handleReportCommand(interaction) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
+    }
+
+    await interaction.deferReply({ flags: 64 });
+    const members = await fetchMembersApi();
+
+    // ECouncil members
+    const ecouncil = (members || []).filter((m) => Boolean(m.isECouncil)).map((m) => `${m.fName || ''} ${m.lName || ''}`.trim()).filter(Boolean);
+
+    // Committee chairs: discover headCommittees per member
+    const chairsMap = {};
+    await Promise.all((members || []).map(async (m) => {
+        if (m?.rollNo === undefined || m?.rollNo === null || String(m.rollNo).trim() === '') return;
+        try {
+            const payload = await fetchCommitteeAssignmentsForRollNo(m.rollNo).catch(() => null);
+            for (const c of (payload?.headCommittees || [])) {
+                const name = String(c || '').trim();
+                if (!name) continue;
+                chairsMap[name] = chairsMap[name] || [];
+                chairsMap[name].push(`${m.fName || ''} ${m.lName || ''}`.trim() || (m.email || m.emailAddress || ''));
+            }
+        } catch { }
+    }));
+
+    const chairsLines = Object.keys(chairsMap).sort().map((k) => `${k}: ${chairsMap[k].join(', ')}`);
+
+    const statusMapped = Object.keys(getAllStatusMappings() || {}).length > 0;
+    const ecouncilRoleMapped = Boolean(getEcouncilRoleId());
+    const committeeHeadRoleMapped = Boolean(getCommitteeHeadRoleId());
+
+    const ok = '✅';
+    const no = '❌';
+
+    const embed = new EmbedBuilder()
+        .setColor(THEME_GOLD)
+        .setTitle('Server Report')
+        .addFields(
+            { name: 'ECouncil (from API)', value: ecouncil.length ? ecouncil.join('\n') : '-', inline: false },
+            { name: 'Committee Chairs (from API)', value: chairsLines.length ? chairsLines.join('\n') : '-', inline: false },
+            { name: 'Status Roles Mapped', value: statusMapped ? ok : no, inline: true },
+            { name: 'ECouncil Role Mapped', value: ecouncilRoleMapped ? ok : no, inline: true },
+            { name: 'Committee Head Role Mapped', value: committeeHeadRoleMapped ? ok : no, inline: true }
+        )
+        .setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
+}
+
 // ---------------- Events ----------------
 client.once(Events.ClientReady, (c) => {
     console.log(`✅ Logged in as ${c.user.tag}`);
@@ -1129,6 +1179,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (interaction.commandName === 'whois') return handleWhoisCommand(interaction);
             if (interaction.commandName === 'lookup') return handleLookupCommand(interaction);
             if (interaction.commandName === 'bootstrap') return handleBootstrapCommand(interaction);
+            if (interaction.commandName === 'report') return handleReportCommand(interaction);
         }
 
         if (interaction.isChatInputCommand() && (interaction.commandName === 'role-map' || interaction.commandName === 'committee-map')) {

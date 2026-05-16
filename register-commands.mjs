@@ -3,7 +3,7 @@ import { REST, Routes, SlashCommandBuilder } from 'discord.js';
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
-const CLIENT_ID = process.env.DISCORD_APP_ID || process.env.CLIENT_ID || '';
+const CLIENT_ID = process.env.DISCORD_APP_ID || process.env.DISCORD_CLIENT_ID || '';
 
 if (!TOKEN || !GUILD_ID || !CLIENT_ID) {
     console.error('Missing required env vars: DISCORD_TOKEN, GUILD_ID, DISCORD_APP_ID or CLIENT_ID');
@@ -83,6 +83,10 @@ const commands = [
                 .setDescription('Email address or roll number')
                 .setRequired(true)
         )
+        .toJSON(),
+    new SlashCommandBuilder()
+        .setName('report')
+        .setDescription('Show ECouncil, committee chairs, and mapping status')
         .toJSON(),
     new SlashCommandBuilder()
         .setName('bootstrap')

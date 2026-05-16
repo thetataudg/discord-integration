@@ -3,7 +3,15 @@
   "userToEmail": {},
   "inviteIdToDiscord": {},
   "pendingIdToDiscord": {},
-  "committeeNameToRoleId": {},
+  "committeeNameToRoleId": {
+    "Banquet": "1483519168048402633",
+    "Brotherhood": "778051770701447168",
+    "Membership Integrity": "1460427324901036153",
+    "Merchandise": "1201723512578908200",
+    "New Member Education": "778044300999131156",
+    "Outreach": "1473806214541611149",
+    "Professionalism": "778051941535973377"
+  },
   "statusNameToRoleId": {},
   "ecouncilRoleId": "",
   "committeeHeadRoleId": "",
