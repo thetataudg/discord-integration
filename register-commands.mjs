@@ -36,6 +36,11 @@ function buildRoleMapCommand(name) {
         )
         .addSubcommand((subcommand) =>
             subcommand
+                .setName('committee-head')
+                .setDescription('Designate a single Committee Head role')
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
                 .setName('list')
                 .setDescription('List the current committee, status, and ECouncil mappings')
         )

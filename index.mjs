@@ -37,6 +37,9 @@ import {
     rememberEcouncilRole,
     getEcouncilRoleId,
     removeEcouncilRole,
+    rememberCommitteeHeadRole,
+    getCommitteeHeadRoleId,
+    removeCommitteeHeadRole,
     getManagedRoleIds,
     rememberDbId,
     markBootstrapCompleted,
@@ -235,11 +238,17 @@ function ecouncilMappingSummaryLines() {
     return roleId ? [`• ECouncil -> <@&${roleId}>`] : [];
 }
 
+function committeeHeadMappingSummaryLines() {
+    const roleId = getCommitteeHeadRoleId();
+    return roleId ? [`• Committee Head -> <@&${roleId}>`] : [];
+}
+
 function allManagedMappingLines() {
     return [
         ...committeeMappingSummaryLines(),
         ...statusMappingSummaryLines(),
         ...ecouncilMappingSummaryLines(),
+        ...committeeHeadMappingSummaryLines(),
     ];
 }
 
@@ -273,6 +282,7 @@ function hasManagePermission(member) {
 function mappingKindLabel(kind) {
     if (kind === 'status') return 'status';
     if (kind === 'ecouncil') return 'ECouncil';
+    if (kind === 'committee-head') return 'committee-head';
     return 'committee';
 }
 
@@ -287,18 +297,21 @@ function mappingItemsForKind(kind, members = []) {
         return [...statuses].sort((a, b) => a.localeCompare(b));
     }
     if (kind === 'ecouncil') return ['ECouncil'];
+    if (kind === 'committee-head') return ['Committee Head'];
     return [];
 }
 
 function sessionTitleForKind(kind) {
     if (kind === 'status') return 'Status Role Mapping';
     if (kind === 'ecouncil') return 'ECouncil Role Mapping';
+    if (kind === 'committee-head') return 'Committee Head Role Mapping';
     return 'Committee Role Mapping';
 }
 
 function itemLabelForKind(kind, item) {
     if (kind === 'status') return `status **${item}**`;
     if (kind === 'ecouncil') return 'ECouncil';
+    if (kind === 'committee-head') return 'Committee Head';
     return `committee **${item}**`;
 }
 
@@ -451,6 +464,8 @@ async function startMappingSession(interaction, kind) {
         items = discovered.filter((name) => !mapped.has(name));
     } else if (kind === 'ecouncil') {
         items = getEcouncilRoleId() ? [] : ['ECouncil'];
+    } else if (kind === 'committee-head') {
+        items = getCommitteeHeadRoleId() ? [] : ['Committee Head'];
     }
 
     if (!items.length) {
@@ -501,7 +516,8 @@ async function handleRoleMapRemove(interaction) {
     const committeeRemoved = removeCommitteeMapping(name);
     const statusRemoved = removeStatusMapping(name);
     const ecouncilRemoved = name.toLowerCase() === 'ecouncil' ? removeEcouncilRole() : false;
-    const removed = committeeRemoved || statusRemoved || ecouncilRemoved;
+    const committeeHeadRemoved = name.toLowerCase() === 'committee-head' ? removeCommitteeHeadRole() : false;
+    const removed = committeeRemoved || statusRemoved || ecouncilRemoved || committeeHeadRemoved;
 
     return interaction.reply({
         content: removed ? `Removed the mapping for **${name}**.` : `No mapping was found for **${name}**.`,
@@ -513,7 +529,7 @@ async function handleRoleMapCommand(interaction) {
     const subcommand = interaction.options.getSubcommand(false);
     if (!subcommand || subcommand === 'committee' || subcommand === 'map') return startMappingSession(interaction, 'committee');
     if (subcommand === 'status') return startMappingSession(interaction, 'status');
-    if (subcommand === 'ecouncil') return startMappingSession(interaction, 'ecouncil');
+    if (subcommand === 'ecouncil' || subcommand === 'committee-head') return startMappingSession(interaction, subcommand === 'ecouncil' ? 'ecouncil' : 'committee-head');
     if (subcommand === 'list') return handleRoleMapList(interaction);
     if (subcommand === 'remove') return handleRoleMapRemove(interaction);
 }
@@ -760,6 +776,24 @@ async function syncMemberRoles(guildMember, apiMember) {
     } else if (ecouncilRoleId && currentRoles.has(ecouncilRoleId)) {
         await guildMember.roles.remove(ecouncilRoleId).catch(() => {});
         changes.removed.push(ecouncilRoleId);
+    }
+
+    // Committee Head role: single shared role for any member who chairs >= 1 committee
+    const committeeHeadRoleId = getCommitteeHeadRoleId();
+    try {
+        const isHead = Array.isArray(committeePayload.headCommittees) && committeePayload.headCommittees.length > 0;
+        if (committeeHeadRoleId) {
+            if (isHead && !currentRoles.has(committeeHeadRoleId)) {
+                await guildMember.roles.add(committeeHeadRoleId).catch(() => {});
+                changes.added.push(committeeHeadRoleId);
+            }
+            if (!isHead && currentRoles.has(committeeHeadRoleId)) {
+                await guildMember.roles.remove(committeeHeadRoleId).catch(() => {});
+                changes.removed.push(committeeHeadRoleId);
+            }
+        }
+    } catch (e) {
+        // ignore
     }
 
     return changes;
@@ -1116,6 +1150,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     if (session.kind === 'committee') rememberCommitteeMapping(current, roleId);
                     if (session.kind === 'status') rememberStatusMapping(current, roleId);
                     if (session.kind === 'ecouncil') rememberEcouncilRole(roleId);
+                    if (session.kind === 'committee-head') rememberCommitteeHeadRole(roleId);
                 }
 
                 session.index += 1;
@@ -1145,8 +1180,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
 
                 if (parts[1] === 'done') {
-                    if (session.kind === 'ecouncil' && !getEcouncilRoleId()) {
-                        return interaction.update({ content: 'Select a role before finishing the ECouncil mapping session.', components: buildMappingSessionComponents(sessionId, session), embeds: [buildMappingSessionEmbed(session)] });
+                    if ((session.kind === 'ecouncil' && !getEcouncilRoleId()) || (session.kind === 'committee-head' && !getCommitteeHeadRoleId())) {
+                        const label = session.kind === 'ecouncil' ? 'ECouncil' : 'Committee Head';
+                        return interaction.update({ content: `Select a role before finishing the ${label} mapping session.`, components: buildMappingSessionComponents(sessionId, session), embeds: [buildMappingSessionEmbed(session)] });
                     }
                     finishMappingSession(sessionId);
                     return interaction.update({
