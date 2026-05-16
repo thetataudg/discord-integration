@@ -1,0 +1,349 @@
+{
+  "emailToUser": {},
+  "userToEmail": {},
+  "inviteIdToDiscord": {},
+  "pendingIdToDiscord": {},
+  "committeeNameToRoleId": {},
+  "statusNameToRoleId": {},
+  "ecouncilRoleId": "",
+  "committeeHeadRoleId": "",
+  "dbIdToDiscord": {
+    "68e5792f68fc342e04cc8170": {
+      "userId": "306889102593359873",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970007294
+    },
+    "68e5791a68fc342e04cc8161": {
+      "userId": "767605059378217000",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970008342
+    },
+    "68cc62d907b8e5985f838358": {
+      "userId": "1017174858087538739",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970010213
+    },
+    "68e5bfca992c0b817f06922b": {
+      "userId": "1207713772186243144",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970011287
+    },
+    "68e5792068fc342e04cc8166": {
+      "userId": "667205391230435351",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970012299
+    },
+    "68e5794368fc342e04cc817f": {
+      "userId": "447162103275585537",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970013291
+    },
+    "68e4143c8c0cc76aac12e5d4": {
+      "userId": "560680790208544779",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970014343
+    },
+    "68e5792768fc342e04cc816b": {
+      "userId": "1140378304256426004",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970015331
+    },
+    "68cc613acb59c8351926799b": {
+      "userId": "621169127222018079",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970016333
+    },
+    "6982b0b4e37710be04a94ae3": {
+      "userId": "698725053432332338",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970017498
+    },
+    "6965c3f4700b23299f234dc5": {
+      "userId": "580524666129612811",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970018475
+    },
+    "692677664228a373a2d6a257": {
+      "userId": "1350311228068855910",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970019462
+    },
+    "6966e54e4204f17dee09f413": {
+      "userId": "541966648542756885",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970021447
+    },
+    "68e58aacf14f669515919d04": {
+      "userId": "809723799930142741",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970022498
+    },
+    "68f8435038be1c9130efdcd5": {
+      "userId": "524808699404091404",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970023547
+    },
+    "68c4bc6e252d1bc03184166d": {
+      "userId": "675366527284936716",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970024604
+    },
+    "68e5790d68fc342e04cc8157": {
+      "userId": "1199534072955936780",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970025654
+    },
+    "68fa7ea6cf8394883bf3ef85": {
+      "userId": "751373635159195709",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970026697
+    },
+    "68e56fc8084e85aa5a425896": {
+      "userId": "762419663975219221",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970027740
+    },
+    "68e40e10fbaf3d1bb5c0871c": {
+      "userId": "751106436758634537",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970028788
+    },
+    "68d7134fae8324a7ed863a90": {
+      "userId": "425517348947230766",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970029847
+    },
+    "6966e5444204f17dee09f40b": {
+      "userId": "249748385819656212",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970031675
+    },
+    "68e40e08fbaf3d1bb5c08717": {
+      "userId": "612067862479372289",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970032653
+    },
+    "6966c7d92393be75ab25f1f2": {
+      "userId": "1449607960060887180",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970033663
+    },
+    "68e591075c7abfbcaca18c9c": {
+      "userId": "1030336547909804132",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970034693
+    },
+    "68e5793c68fc342e04cc817a": {
+      "userId": "340236456754937866",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970035676
+    },
+    "6965c40d700b23299f234dd0": {
+      "userId": "1407115042146750466",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970036714
+    },
+    "68cca01e4f9a9bbe34529784": {
+      "userId": "716691367702823013",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970037761
+    },
+    "68e5c1ed8ef35120be20f29d": {
+      "userId": "397117515270193153",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970038747
+    },
+    "68e40e17fbaf3d1bb5c08721": {
+      "userId": "321729066283565069",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970039794
+    },
+    "6970454e1a15faec8902f1c5": {
+      "userId": "1407468652856606831",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970041675
+    },
+    "686009b6ba703691a5ebcdf1": {
+      "userId": "121063744901087232",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970042743
+    },
+    "68f8435238be1c9130efdcda": {
+      "userId": "801873773745274904",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970043779
+    },
+    "69670048e9b0f5bd0ae18a7f": {
+      "userId": "909298075049267230",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970044765
+    },
+    "68e5c2b6498be4497fbd453a": {
+      "userId": "632092319054823436",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970045741
+    },
+    "696673a74794031cd2548209": {
+      "userId": "350543438841643019",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970046716
+    },
+    "68e5791368fc342e04cc815c": {
+      "userId": "1010048494620377118",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970047711
+    },
+    "68c36e198f4c7a4545a506b0": {
+      "userId": "447210402279981066",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970048717
+    },
+    "697988683eee4dc69d174b0b": {
+      "userId": "307051577750061056",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970049764
+    },
+    "68c36d912ae91c43cc1e928c": {
+      "userId": "713981414621708328",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970051532
+    },
+    "6966f6e687fc5f803f83eab9": {
+      "userId": "1274151334592909454",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970052566
+    },
+    "6966c82a2393be75ab25f24f": {
+      "userId": "1412986411702812672",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970053576
+    },
+    "6966c7f92393be75ab25f228": {
+      "userId": "740793407219433522",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970054607
+    },
+    "68e40e1ffbaf3d1bb5c08726": {
+      "userId": "372391695439888385",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970055624
+    },
+    "68e434dc3eba788f6d8423ad": {
+      "userId": "676965503599640599",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970056616
+    },
+    "68e434e33eba788f6d8423b5": {
+      "userId": "923828895617265684",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970057628
+    },
+    "68fac3d0092656fd04a0bae4": {
+      "userId": "1142306350563598428",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970058702
+    },
+    "68e56fbf084e85aa5a42588e": {
+      "userId": "741029874852036628",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970059719
+    },
+    "696c574e3248a0941387ec02": {
+      "userId": "519334162319278082",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970061979
+    },
+    "68607e2240eff8912c6b2e68": {
+      "userId": "554454467920134144",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970062972
+    },
+    "68e414468c0cc76aac12e5d9": {
+      "userId": "1208316287579852821",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970063976
+    },
+    "68cc91509a994795d04fe9cf": {
+      "userId": "588404042925998080",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970064989
+    },
+    "6966c76a2393be75ab25f18f": {
+      "userId": "664628173132267541",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970066059
+    },
+    "686096afc2a4657ca853c160": {
+      "userId": "190461974050635776",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970067079
+    },
+    "68e5793668fc342e04cc8175": {
+      "userId": "485066370304966657",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970068108
+    },
+    "68dc441dabaa3322a8010608": {
+      "userId": "443060826652409877",
+      "email": "",
+      "channelId": null,
+      "savedAt": 1778970069157
+    }
+  },
+  "bootstrapCompleted": true
+}

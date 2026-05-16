@@ -23,6 +23,7 @@ import {
     initStore,
     rememberEmail,
     getByEmail,
+    getByUserId,
     getByPendingId,
     getByDbId,
     linkPendingToInvite,
@@ -449,10 +450,10 @@ async function renderMappingSession(interaction, sessionId) {
 
 async function startMappingSession(interaction, kind) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
     let items = [];
     if (kind === 'committee') {
         const discovered = await discoverCommitteeNamesFromMembers();
@@ -489,12 +490,12 @@ async function startMappingSession(interaction, kind) {
 
 async function handleRoleMapList(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
     }
 
     const lines = allManagedMappingLines();
     if (!lines.length) {
-        return interaction.reply({ content: 'No role mappings have been saved yet.', ephemeral: true });
+        return interaction.reply({ content: 'No role mappings have been saved yet.', flags: 64 });
     }
 
     const embeds = chunkLines(lines).map((chunk, index) =>
@@ -504,12 +505,12 @@ async function handleRoleMapList(interaction) {
             .setDescription(chunk)
     );
 
-    return interaction.reply({ embeds, ephemeral: true });
+    return interaction.reply({ embeds, flags: 64 });
 }
 
 async function handleRoleMapRemove(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
     }
 
     const name = interaction.options.getString('name', true).trim();
@@ -521,7 +522,7 @@ async function handleRoleMapRemove(interaction) {
 
     return interaction.reply({
         content: removed ? `Removed the mapping for **${name}**.` : `No mapping was found for **${name}**.`,
-        ephemeral: true,
+        flags: 64,
     });
 }
 
@@ -913,7 +914,7 @@ function committeeNamesFromPayload(payload) {
 function buildMemberRecordEmbed(apiMember, committeePayload) {
     const committees = committeeNamesFromPayload(committeePayload);
     const fullName = [apiMember.fName, apiMember.lName].filter(Boolean).join(' ') || '-';
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setColor(THEME_GOLD)
         .setTitle(fullName)
         .addFields(
@@ -928,8 +929,10 @@ function buildMemberRecordEmbed(apiMember, committeePayload) {
             },
             { name: 'Committees', value: committees.length ? committees.join(', ') : '-', inline: false }
         )
-        .setFooter({ text: apiMember.email || apiMember.emailAddress || '' })
         .setTimestamp();
+    const footerText = String(apiMember.email || apiMember.emailAddress || '').trim();
+    if (footerText) embed.setFooter({ text: footerText });
+    return embed;
 }
 
 async function runFullRoleSync(guild, members = null) {
@@ -980,10 +983,10 @@ function logRoleSyncSummary(summary, source) {
 
 async function handleSyncCommand(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
     const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
     const summary = await runFullRoleSync(guild);
     logRoleSyncSummary(summary, 'manual');
@@ -994,7 +997,7 @@ async function handleSyncCommand(interaction) {
 
 async function handleWhoisCommand(interaction) {
     const user = interaction.options.getUser('user', true);
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     const members = await fetchMembersApi();
     const stored = getByUserId(user.id);
@@ -1012,7 +1015,7 @@ async function handleWhoisCommand(interaction) {
 
 async function handleLookupCommand(interaction) {
     const query = interaction.options.getString('query', true).trim();
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     const members = await fetchMembersApi();
     const normalized = query.toLowerCase();
@@ -1031,13 +1034,13 @@ async function handleLookupCommand(interaction) {
 
 async function handleBootstrapCommand(interaction) {
     if (!hasManagePermission(interaction.member)) {
-        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+        return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
     }
     if (isBootstrapCompleted()) {
-        return interaction.reply({ content: 'Bootstrap has already been run once.', ephemeral: true });
+        return interaction.reply({ content: 'Bootstrap has already been run once.', flags: 64 });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
     const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
     const members = await fetchMembersApi();
     const guildMembers = await guild.members.fetch();
@@ -1141,7 +1144,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
                 }
                 if (interaction.user.id !== session.userId) {
-                    return interaction.reply({ content: 'This mapping session is not yours.', ephemeral: true });
+                    return interaction.reply({ content: 'This mapping session is not yours.', flags: 64 });
                 }
 
                 const current = session.items[session.index];
@@ -1176,7 +1179,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
                 }
                 if (interaction.user.id !== session.userId) {
-                    return interaction.reply({ content: 'This mapping session is not yours.', ephemeral: true });
+                    return interaction.reply({ content: 'This mapping session is not yours.', flags: 64 });
                 }
 
                 if (parts[1] === 'done') {
@@ -1216,7 +1219,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (ns === 'verify' && action === 'start') {
                 const userId = parts[2];
                 if (userId !== interaction.user.id) {
-                    return interaction.reply({ content: 'This button is not for you.', ephemeral: true });
+                    return interaction.reply({ content: 'This button is not for you.', flags: 64 });
                 }
                 return interaction.showModal(emailModal(userId));
             }
@@ -1229,7 +1232,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const hasPerm =
                     hasAdminRole || member.permissions.has(PermissionsBitField.Flags.ManageGuild);
                 if (!hasPerm)
-                    return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+                    return interaction.reply({ content: 'You lack permission to do this.', flags: 64 });
 
                 const pendingId = parts[2]; // DB id
                 const emailFromButton = parts[3] && parts[3] !== 'none' ? parts[3] : null;
@@ -1326,23 +1329,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Modal submit (email)
         if (interaction.isModalSubmit()) {
             const [ns, kind, userId] = interaction.customId.split(':');
-            if (ns === 'verify' && kind === 'email') {
+                if (ns === 'verify' && kind === 'email') {
                 if (userId !== interaction.user.id) return;
                 const email = interaction.fields.getTextInputValue('email').trim();
                 if (!isValidEmail(email)) {
-                    return interaction.reply({ content: 'Please enter a valid email.', ephemeral: true });
+                    return interaction.reply({ content: 'Please enter a valid email.', flags: 64 });
                 }
 
                 if (getByEmail(email)) {
                     return interaction.reply({
                         content: 'That email is already registered. Please contact a mod if you need help.',
-                        ephemeral: true,
+                        flags: 64,
                     });
                 }
 
                 const channelId = interaction.channel?.id || null;
 
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: 64 });
                 const { ok, payload } = await postInvitation(email);
 
                 // Persist: email <-> discord user, and the invite id returned
@@ -1382,7 +1385,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.error('Interaction error:', err);
         if (interaction.isRepliable()) {
             try {
-                await interaction.reply({ content: 'Something went wrong. Try again.', ephemeral: true });
+                await interaction.reply({ content: 'Something went wrong. Try again.', flags: 64 });
             } catch { }
         }
     }
