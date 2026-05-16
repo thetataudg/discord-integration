@@ -14,6 +14,7 @@ import {
     ModalBuilder,
     Partials,
     PermissionsBitField,
+    RoleSelectMenuBuilder,
     TextInputBuilder,
     TextInputStyle,
 } from 'discord.js';
@@ -23,8 +24,24 @@ import {
     rememberEmail,
     getByEmail,
     getByPendingId,
+    getByDbId,
     linkPendingToInvite,
     findRecentInviteMapping,
+    rememberCommitteeMapping,
+    getAllCommitteeMappings,
+    removeCommitteeMapping,
+    getCommitteeRoleIds,
+    rememberStatusMapping,
+    getAllStatusMappings,
+    removeStatusMapping,
+    rememberEcouncilRole,
+    getEcouncilRoleId,
+    removeEcouncilRole,
+    getManagedRoleIds,
+    rememberDbId,
+    markBootstrapCompleted,
+    isBootstrapCompleted,
+    getStatusRoleId,
 } from './store.js';
 
 // ---------------- ENV ----------------
@@ -45,9 +62,12 @@ const APPROVAL_API_BASE =
     process.env.APPROVAL_API_BASE || 'https://thetatau-dg.org/api/members/pending';
 const MEMBERS_API_URL =
     process.env.MEMBERS_API_URL || 'https://thetatau-dg.org/api/members';
-const PENDING_POLL_MS = parseInt(process.env.PENDING_POLL_MS || '10000', 10);
+const PENDING_POLL_MS = parseInt(process.env.PENDING_POLL_MS || '1800000', 10);
+const ROLE_SYNC_INTERVAL_MS = parseInt(process.env.ROLE_SYNC_INTERVAL_MS || '3600000', 10);
 
 // New/optional envs
+// Optional role defaults. The store-backed role-map command is the source of truth,
+// but these defaults remain available as fallbacks for legacy deployments.
 const DEFAULT_VERIFIED_ROLE_ID = process.env.DEFAULT_VERIFIED_ROLE_ID || '';
 const DELETE_VERIFY_CHANNEL_AFTER_MS = parseInt(
     process.env.DELETE_VERIFY_CHANNEL_AFTER_MS || '15000',
@@ -92,7 +112,9 @@ const client = new Client({
 
 // -------------- In-memory state --------------
 const awaitingPfp = new Map(); // userId -> { apiMember, channelId }
+const committeeMapSessions = new Map(); // sessionId -> { userId, kind, items, index }
 let lastPendingDigest = '';
+let roleSyncInProgress = false;
 
 // -------------- Helpers --------------
 const THEME_RED = 0x8c1d40; // Theta Tau dark red
@@ -192,6 +214,308 @@ function approveRejectRowDisabled(userId, email) {
             .setLabel('Reject')
             .setDisabled(true)
     );
+}
+
+function committeeMappingSummaryLines() {
+    const mappings = getAllCommitteeMappings();
+    return Object.entries(mappings)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([committee, roleId]) => `• Committee: ${committee} -> <@&${roleId}>`);
+}
+
+function statusMappingSummaryLines() {
+    const mappings = getAllStatusMappings();
+    return Object.entries(mappings)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([status, roleId]) => `• Status: ${status} -> <@&${roleId}>`);
+}
+
+function ecouncilMappingSummaryLines() {
+    const roleId = getEcouncilRoleId();
+    return roleId ? [`• ECouncil -> <@&${roleId}>`] : [];
+}
+
+function allManagedMappingLines() {
+    return [
+        ...committeeMappingSummaryLines(),
+        ...statusMappingSummaryLines(),
+        ...ecouncilMappingSummaryLines(),
+    ];
+}
+
+function chunkLines(lines, maxChars = 900) {
+    const chunks = [];
+    let current = [];
+    let currentLength = 0;
+    for (const line of lines) {
+        const lineLength = line.length + 1;
+        if (current.length && currentLength + lineLength > maxChars) {
+            chunks.push(current.join('\n'));
+            current = [line];
+            currentLength = lineLength;
+        } else {
+            current.push(line);
+            currentLength += lineLength;
+        }
+    }
+    if (current.length) chunks.push(current.join('\n'));
+    return chunks;
+}
+
+function hasManagePermission(member) {
+    return Boolean(
+        member &&
+            (member.permissions?.has(PermissionsBitField.Flags.ManageGuild) ||
+                (ADMIN_ROLE_ID && member.roles?.cache?.has(ADMIN_ROLE_ID)))
+    );
+}
+
+function mappingKindLabel(kind) {
+    if (kind === 'status') return 'status';
+    if (kind === 'ecouncil') return 'ECouncil';
+    return 'committee';
+}
+
+function mappingItemsForKind(kind, members = []) {
+    if (kind === 'committee') return [];
+    if (kind === 'status') {
+        const statuses = new Set();
+        for (const member of members) {
+            const status = String(member?.status || '').trim();
+            if (status) statuses.add(status);
+        }
+        return [...statuses].sort((a, b) => a.localeCompare(b));
+    }
+    if (kind === 'ecouncil') return ['ECouncil'];
+    return [];
+}
+
+function sessionTitleForKind(kind) {
+    if (kind === 'status') return 'Status Role Mapping';
+    if (kind === 'ecouncil') return 'ECouncil Role Mapping';
+    return 'Committee Role Mapping';
+}
+
+function itemLabelForKind(kind, item) {
+    if (kind === 'status') return `status **${item}**`;
+    if (kind === 'ecouncil') return 'ECouncil';
+    return `committee **${item}**`;
+}
+
+function buildMappingSummaryEmbed() {
+    const lines = allManagedMappingLines();
+    return new EmbedBuilder()
+        .setColor(THEME_GOLD)
+        .setTitle('Current Role Mappings')
+        .setDescription(lines.length ? lines.join('\n') : 'No role mappings have been saved yet.');
+}
+
+async function fetchCommitteeAssignmentsForRollNo(rollNo) {
+    const url = `https://thetatau-dg.org/api/committees/public-member/${encodeURIComponent(String(rollNo))}`;
+    const res = await fetch(url);
+    let data = null;
+    try {
+        data = await res.json();
+    } catch {
+        data = null;
+    }
+    return {
+        headCommittees: Array.isArray(data?.headCommittees) ? data.headCommittees : [],
+        memberCommittees: Array.isArray(data?.memberCommittees) ? data.memberCommittees : [],
+    };
+}
+
+async function fetchMembersApi() {
+    const res = await fetch(MEMBERS_API_URL).catch(() => null);
+    if (!res) return [];
+    let data = null;
+    try {
+        data = await res.json();
+    } catch {
+        data = null;
+    }
+    return Array.isArray(data) ? data : data?.data || [];
+}
+
+function normalizeCommitteeSet(values) {
+    return new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean));
+}
+
+async function discoverCommitteeNamesFromMembers() {
+    const members = await fetchMembersApi();
+    const activeMembers = members.filter((member) => String(member.status || '').toLowerCase() === 'active');
+    const collected = new Set();
+
+    await Promise.all(
+        activeMembers
+            .filter((member) => member.rollNo !== undefined && member.rollNo !== null && String(member.rollNo).trim() !== '')
+            .map(async (member) => {
+                const payload = await fetchCommitteeAssignmentsForRollNo(member.rollNo).catch(() => null);
+                for (const committee of [...(payload?.headCommittees || []), ...(payload?.memberCommittees || [])]) {
+                    const name = String(committee || '').trim();
+                    if (name) collected.add(name);
+                }
+            })
+    );
+
+    return [...collected].sort((a, b) => a.localeCompare(b));
+}
+
+async function discoverStatusNamesFromMembers() {
+    const members = await fetchMembersApi();
+    return [...new Set(members.map((member) => String(member.status || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function buildMappingSessionEmbed(session) {
+    const current = session.items[session.index];
+    return new EmbedBuilder()
+        .setColor(THEME_GOLD)
+        .setTitle(sessionTitleForKind(session.kind))
+        .setDescription(
+            current
+                ? [
+                      `Map ${itemLabelForKind(session.kind, current)} to an existing Discord role.`,
+                      '',
+                      `Progress: ${session.index + 1}/${session.items.length}`,
+                  ].join('\n')
+                : `No ${mappingKindLabel(session.kind)} values left to map.`
+        )
+        .setFooter({ text: 'Select a role, skip this item, or finish the session.' });
+}
+
+function buildMappingSessionComponents(sessionId, session) {
+    const current = session.items[session.index];
+    if (!current) return [];
+    return [
+        new ActionRowBuilder().addComponents(
+            new RoleSelectMenuBuilder()
+                .setCustomId(`role-map:role:${sessionId}`)
+                .setPlaceholder(`Select a role for ${current}`)
+                .setMinValues(1)
+                .setMaxValues(1)
+        ),
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`role-map:skip:${sessionId}`)
+                .setStyle(ButtonStyle.Secondary)
+                .setLabel('Skip'),
+            new ButtonBuilder()
+                .setCustomId(`role-map:done:${sessionId}`)
+                .setStyle(ButtonStyle.Primary)
+                .setLabel('Finish')
+        ),
+    ];
+}
+
+function finishMappingSession(sessionId) {
+    committeeMapSessions.delete(sessionId);
+}
+
+async function renderMappingSession(interaction, sessionId) {
+    const session = committeeMapSessions.get(sessionId);
+    if (!session) {
+        return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
+    }
+
+    const current = session.items[session.index];
+    if (!current) {
+        finishMappingSession(sessionId);
+        return interaction.update({
+            content: `${mappingKindLabel(session.kind)} mapping session finished.`,
+            embeds: [],
+            components: [],
+        });
+    }
+
+    return interaction.update({
+        content: undefined,
+        embeds: [buildMappingSessionEmbed(session)],
+        components: buildMappingSessionComponents(sessionId, session),
+    });
+}
+
+async function startMappingSession(interaction, kind) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    let items = [];
+    if (kind === 'committee') {
+        const discovered = await discoverCommitteeNamesFromMembers();
+        const mapped = new Set(Object.keys(getAllCommitteeMappings()));
+        items = discovered.filter((name) => !mapped.has(name));
+    } else if (kind === 'status') {
+        const discovered = await discoverStatusNamesFromMembers();
+        const mapped = new Set(Object.keys(getAllStatusMappings()));
+        items = discovered.filter((name) => !mapped.has(name));
+    } else if (kind === 'ecouncil') {
+        items = getEcouncilRoleId() ? [] : ['ECouncil'];
+    }
+
+    if (!items.length) {
+        return interaction.editReply(`All discovered ${mappingKindLabel(kind)} values are already mapped.`);
+    }
+
+    const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    committeeMapSessions.set(sessionId, {
+        userId: interaction.user.id,
+        kind,
+        items,
+        index: 0,
+    });
+
+    await interaction.editReply({
+        content: 'Use the controls below to map role bindings.',
+        embeds: [buildMappingSessionEmbed(committeeMapSessions.get(sessionId))],
+        components: buildMappingSessionComponents(sessionId, committeeMapSessions.get(sessionId)),
+    });
+}
+
+async function handleRoleMapList(interaction) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+    }
+
+    const lines = allManagedMappingLines();
+    if (!lines.length) {
+        return interaction.reply({ content: 'No role mappings have been saved yet.', ephemeral: true });
+    }
+
+    const embeds = chunkLines(lines).map((chunk, index) =>
+        new EmbedBuilder()
+            .setColor(THEME_GOLD)
+            .setTitle(index === 0 ? 'Current Role Mappings' : 'Current Role Mappings Continued')
+            .setDescription(chunk)
+    );
+
+    return interaction.reply({ embeds, ephemeral: true });
+}
+
+async function handleRoleMapRemove(interaction) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+    }
+
+    const name = interaction.options.getString('name', true).trim();
+    const committeeRemoved = removeCommitteeMapping(name);
+    const statusRemoved = removeStatusMapping(name);
+    const ecouncilRemoved = name.toLowerCase() === 'ecouncil' ? removeEcouncilRole() : false;
+    const removed = committeeRemoved || statusRemoved || ecouncilRemoved;
+
+    return interaction.reply({
+        content: removed ? `Removed the mapping for **${name}**.` : `No mapping was found for **${name}**.`,
+        ephemeral: true,
+    });
+}
+
+async function handleRoleMapCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand(false);
+    if (!subcommand || subcommand === 'committee' || subcommand === 'map') return startMappingSession(interaction, 'committee');
+    if (subcommand === 'status') return startMappingSession(interaction, 'status');
+    if (subcommand === 'ecouncil') return startMappingSession(interaction, 'ecouncil');
+    if (subcommand === 'list') return handleRoleMapList(interaction);
+    if (subcommand === 'remove') return handleRoleMapRemove(interaction);
 }
 
 function emailModal(userId) {
@@ -351,12 +675,96 @@ function buildWelcomeEmbedFromApi(member, api) {
 }
 
 function statusRoleIdFrom(api) {
-    const s = String(api.status || '').toLowerCase();
-    if (/alum/.test(s)) return process.env.ALUMNI_ROLE_ID || '';
-    if (/active/.test(s)) return process.env.ACTIVE_ROLE_ID || '';
-    if (/(pnm|interest|prospect|new|pledge)/.test(s)) return process.env.PNM_ROLE_ID || '';
-    return '';
+    return getStatusRoleId(api?.status) || '';
 }
+
+function managedStatusRoleIds() {
+    return Object.values(getAllStatusMappings()).filter(Boolean);
+}
+
+async function fetchCommitteeMemberships(rollNo) {
+    if (rollNo === undefined || rollNo === null || String(rollNo).trim() === '') {
+        return { headCommittees: [], memberCommittees: [] };
+    }
+
+    const url = `https://thetatau-dg.org/api/committees/public-member/${encodeURIComponent(String(rollNo))}`;
+    const res = await fetch(url).catch(() => null);
+    if (!res) return { headCommittees: [], memberCommittees: [] };
+
+    let data = null;
+    try {
+        data = await res.json();
+    } catch {
+        data = null;
+    }
+
+    return {
+        headCommittees: Array.isArray(data?.headCommittees) ? data.headCommittees : [],
+        memberCommittees: Array.isArray(data?.memberCommittees) ? data.memberCommittees : [],
+    };
+}
+
+async function syncMemberRoles(guildMember, apiMember) {
+    const changes = { added: [], removed: [] };
+    if (!guildMember || !apiMember) return changes;
+
+    const currentRoles = guildMember.roles?.cache || new Map();
+    const committeeMappings = getAllCommitteeMappings();
+    const committeeRoleIds = new Set(getCommitteeRoleIds());
+    const desiredCommitteeRoleIds = new Set();
+
+    const [committeePayload, statusRoleId] = await Promise.all([
+        fetchCommitteeMemberships(apiMember.rollNo).catch(() => ({ headCommittees: [], memberCommittees: [] })),
+        Promise.resolve(statusRoleIdFrom(apiMember)),
+    ]);
+
+    for (const committee of [...committeePayload.headCommittees, ...committeePayload.memberCommittees]) {
+        const roleId = committeeMappings[String(committee || '').trim()];
+        if (roleId) desiredCommitteeRoleIds.add(roleId);
+    }
+
+    for (const roleId of committeeRoleIds) {
+        const hasRole = currentRoles.has(roleId);
+        const shouldHaveRole = desiredCommitteeRoleIds.has(roleId);
+        if (shouldHaveRole && !hasRole) {
+            await guildMember.roles.add(roleId).catch(() => {});
+            changes.added.push(roleId);
+        }
+        if (!shouldHaveRole && hasRole) {
+            await guildMember.roles.remove(roleId).catch(() => {});
+            changes.removed.push(roleId);
+        }
+    }
+
+    const currentStatusRoleIds = managedStatusRoleIds();
+    const desiredStatusRoleId = statusRoleId || '';
+    if (desiredStatusRoleId) {
+        for (const roleId of currentStatusRoleIds) {
+            if (roleId !== desiredStatusRoleId && currentRoles.has(roleId)) {
+                await guildMember.roles.remove(roleId).catch(() => {});
+                changes.removed.push(roleId);
+            }
+        }
+        if (!currentRoles.has(desiredStatusRoleId)) {
+            await guildMember.roles.add(desiredStatusRoleId).catch(() => {});
+            changes.added.push(desiredStatusRoleId);
+        }
+    }
+
+    const ecouncilRoleId = getEcouncilRoleId();
+    if (apiMember.isECouncil && ecouncilRoleId) {
+        if (!currentRoles.has(ecouncilRoleId)) {
+            await guildMember.roles.add(ecouncilRoleId).catch(() => {});
+            changes.added.push(ecouncilRoleId);
+        }
+    } else if (ecouncilRoleId && currentRoles.has(ecouncilRoleId)) {
+        await guildMember.roles.remove(ecouncilRoleId).catch(() => {});
+        changes.removed.push(ecouncilRoleId);
+    }
+
+    return changes;
+}
+
 function buildPendingCheckUrl() {
     try {
         if (PENDING_CHECK_URL) {
@@ -461,20 +869,193 @@ async function getPending() {
     return [];
 }
 async function getMembers() {
-    const res = await fetch(MEMBERS_API_URL);
-    let data = null;
-    try {
-        data = await res.json();
-    } catch {
-        data = null;
+    return fetchMembersApi();
+}
+
+function committeeNamesFromPayload(payload) {
+    return [...new Set([...(payload?.headCommittees || []), ...(payload?.memberCommittees || [])].map((value) => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function buildMemberRecordEmbed(apiMember, committeePayload) {
+    const committees = committeeNamesFromPayload(committeePayload);
+    const fullName = [apiMember.fName, apiMember.lName].filter(Boolean).join(' ') || '-';
+    return new EmbedBuilder()
+        .setColor(THEME_GOLD)
+        .setTitle(fullName)
+        .addFields(
+            { name: 'Roll #', value: String(apiMember.rollNo || '-'), inline: true },
+            { name: 'Status', value: String(apiMember.status || '-'), inline: true },
+            { name: 'Grad Year', value: String(apiMember.gradYear || '-'), inline: true },
+            { name: 'ECouncil Position', value: String(apiMember.ecouncilPosition || '-'), inline: true },
+            {
+                name: 'Major',
+                value: Array.isArray(apiMember.majors) ? apiMember.majors.join(', ') : String(apiMember.major || '-'),
+                inline: false,
+            },
+            { name: 'Committees', value: committees.length ? committees.join(', ') : '-', inline: false }
+        )
+        .setFooter({ text: apiMember.email || apiMember.emailAddress || '' })
+        .setTimestamp();
+}
+
+async function runFullRoleSync(guild, members = null) {
+    const apiMembers = members || await fetchMembersApi();
+    const summary = {
+        total: apiMembers.length,
+        matched: 0,
+        skipped: 0,
+        addedRoles: 0,
+        removedRoles: 0,
+        missingInGuild: 0,
+        usedDiscordId: 0,
+        usedDbId: 0,
+    };
+
+    for (const apiMember of apiMembers) {
+        let guildMember = null;
+        if (apiMember.discordId) {
+            guildMember = await guild.members.fetch(apiMember.discordId).catch(() => null);
+            if (guildMember) summary.usedDiscordId += 1;
+        }
+        if (!guildMember) {
+            const stored = getByDbId(apiMember._id);
+            if (stored?.userId) {
+                guildMember = await guild.members.fetch(stored.userId).catch(() => null);
+                if (guildMember) summary.usedDbId += 1;
+            }
+        }
+
+        if (!guildMember) {
+            summary.skipped += 1;
+            summary.missingInGuild += 1;
+            continue;
+        }
+
+        const changes = await syncMemberRoles(guildMember, apiMember).catch(() => ({ added: [], removed: [] }));
+        summary.matched += 1;
+        summary.addedRoles += changes.added.length;
+        summary.removedRoles += changes.removed.length;
     }
-    return Array.isArray(data) ? data : data?.data || [];
+
+    return summary;
+}
+
+function logRoleSyncSummary(summary, source) {
+    console.log(`[role-sync:${source}] ${JSON.stringify(summary)}`);
+}
+
+async function handleSyncCommand(interaction) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
+    const summary = await runFullRoleSync(guild);
+    logRoleSyncSummary(summary, 'manual');
+    return interaction.editReply(
+        `Synced ${summary.matched}/${summary.total} members. Added ${summary.addedRoles} role assignments and removed ${summary.removedRoles}. Skipped ${summary.skipped}.`
+    );
+}
+
+async function handleWhoisCommand(interaction) {
+    const user = interaction.options.getUser('user', true);
+    await interaction.deferReply({ ephemeral: true });
+
+    const members = await fetchMembersApi();
+    const stored = getByUserId(user.id);
+    const storedEmail = String(stored?.email || '').trim().toLowerCase();
+    const apiMember = members.find((member) => String(member.discordId || '').trim() === String(user.id)) ||
+        (storedEmail ? members.find((member) => String(member.email || member.emailAddress || '').trim().toLowerCase() === storedEmail) : null);
+
+    if (!apiMember) {
+        return interaction.editReply(`No chapter record found for ${user.tag}.`);
+    }
+
+    const committeePayload = await fetchCommitteeAssignmentsForRollNo(apiMember.rollNo).catch(() => ({ headCommittees: [], memberCommittees: [] }));
+    return interaction.editReply({ embeds: [buildMemberRecordEmbed(apiMember, committeePayload)] });
+}
+
+async function handleLookupCommand(interaction) {
+    const query = interaction.options.getString('query', true).trim();
+    await interaction.deferReply({ ephemeral: true });
+
+    const members = await fetchMembersApi();
+    const normalized = query.toLowerCase();
+    const apiMember = members.find((member) => String(member.email || member.emailAddress || '').trim().toLowerCase() === normalized)
+        || members.find((member) => String(member.rollNo || '').trim().toLowerCase() === normalized)
+        || members.find((member) => String(member.email || member.emailAddress || '').trim().toLowerCase().includes(normalized))
+        || members.find((member) => String(member.rollNo || '').trim().toLowerCase().includes(normalized));
+
+    if (!apiMember) {
+        return interaction.editReply(`No chapter record matched **${query}**.`);
+    }
+
+    const committeePayload = await fetchCommitteeAssignmentsForRollNo(apiMember.rollNo).catch(() => ({ headCommittees: [], memberCommittees: [] }));
+    return interaction.editReply({ embeds: [buildMemberRecordEmbed(apiMember, committeePayload)] });
+}
+
+async function handleBootstrapCommand(interaction) {
+    if (!hasManagePermission(interaction.member)) {
+        return interaction.reply({ content: 'You lack permission to do this.', ephemeral: true });
+    }
+    if (isBootstrapCompleted()) {
+        return interaction.reply({ content: 'Bootstrap has already been run once.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const guild = interaction.guild ?? (await client.guilds.fetch(GUILD_ID));
+    const members = await fetchMembersApi();
+    const guildMembers = await guild.members.fetch();
+    const apiByDiscordId = new Map(members.filter((member) => member.discordId).map((member) => [String(member.discordId), member]));
+    const apiByEmail = new Map(members.filter((member) => member.email || member.emailAddress).map((member) => [String(member.email || member.emailAddress).trim().toLowerCase(), member]));
+
+    const summary = { matched: 0, skipped: 0, skippedBot: 0, skippedNoApiRecord: 0, usedDiscordId: 0, usedEmail: 0, savedDbIds: 0 };
+
+    for (const guildMember of guildMembers.values()) {
+        if (guildMember.user.bot) {
+            summary.skipped += 1;
+            summary.skippedBot += 1;
+            continue;
+        }
+
+        let apiMember = apiByDiscordId.get(guildMember.id) || null;
+        if (apiMember) {
+            summary.usedDiscordId += 1;
+        }
+        if (!apiMember) {
+            const stored = getByUserId(guildMember.id);
+            const storedEmail = String(stored?.email || '').trim().toLowerCase();
+            if (storedEmail) {
+                apiMember = apiByEmail.get(storedEmail) || null;
+                if (apiMember) summary.usedEmail += 1;
+            }
+        }
+
+        if (!apiMember) {
+            summary.skipped += 1;
+            summary.skippedNoApiRecord += 1;
+            continue;
+        }
+
+        rememberDbId(apiMember._id, { userId: guildMember.id, email: apiMember.email || apiMember.emailAddress || '', channelId: null });
+        summary.savedDbIds += 1;
+
+        await syncMemberRoles(guildMember, apiMember).catch(() => {});
+        summary.matched += 1;
+    }
+
+    markBootstrapCompleted();
+    return interaction.editReply(
+        `Bootstrap complete. Matched ${summary.matched}, skipped ${summary.skipped} (bots: ${summary.skippedBot}, missing API record: ${summary.skippedNoApiRecord}). Saved ${summary.savedDbIds} DB-id links.`
+    );
 }
 
 // ---------------- Events ----------------
 client.once(Events.ClientReady, (c) => {
     console.log(`✅ Logged in as ${c.user.tag}`);
     schedulePendingChecker();
+    scheduleRoleSyncChecker();
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -483,16 +1064,21 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
         await member.roles.add(PENDING_ROLE_ID).catch(() => { });
         const channel = await createPrivateChannel(member);
+        const prior = getByUserId(member.id);
 
         const intro = new EmbedBuilder()
             .setColor(THEME_GOLD)
-            .setTitle("Welcome! Let's get you verified")
-            .setDescription('Click **Get Started** to enter your email. We’ll send you an invitation and instructions.');
+            .setTitle(prior ? 'Welcome back!' : "Welcome! Let's get you verified")
+            .setDescription(
+                prior
+                    ? `You previously verified with **${prior.email}**. A mod can help restore access or continue onboarding.`
+                    : 'Click **Get Started** to enter your email. We’ll send you an invitation and instructions.'
+            );
 
         await channel.send({
             content: `<@${member.id}>`,
             embeds: [intro],
-            components: [getStartedRow(member.id)],
+            components: prior ? [] : [getStartedRow(member.id)],
         });
     } catch (err) {
         console.error('GuildMemberAdd error:', err);
@@ -501,6 +1087,89 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     try {
+        if (interaction.isChatInputCommand()) {
+            if (interaction.commandName === 'sync') return handleSyncCommand(interaction);
+            if (interaction.commandName === 'whois') return handleWhoisCommand(interaction);
+            if (interaction.commandName === 'lookup') return handleLookupCommand(interaction);
+            if (interaction.commandName === 'bootstrap') return handleBootstrapCommand(interaction);
+        }
+
+        if (interaction.isChatInputCommand() && (interaction.commandName === 'role-map' || interaction.commandName === 'committee-map')) {
+            return handleRoleMapCommand(interaction);
+        }
+
+        if (interaction.isRoleSelectMenu()) {
+            const parts = interaction.customId.split(':');
+            if (parts[0] === 'role-map' && parts[1] === 'role') {
+                const sessionId = parts[2];
+                const session = committeeMapSessions.get(sessionId);
+                if (!session) {
+                    return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
+                }
+                if (interaction.user.id !== session.userId) {
+                    return interaction.reply({ content: 'This mapping session is not yours.', ephemeral: true });
+                }
+
+                const current = session.items[session.index];
+                const roleId = interaction.values?.[0];
+                if (current && roleId) {
+                    if (session.kind === 'committee') rememberCommitteeMapping(current, roleId);
+                    if (session.kind === 'status') rememberStatusMapping(current, roleId);
+                    if (session.kind === 'ecouncil') rememberEcouncilRole(roleId);
+                }
+
+                session.index += 1;
+                if (session.index >= session.items.length) {
+                    finishMappingSession(sessionId);
+                    return interaction.update({
+                        content: `${mappingKindLabel(session.kind)} mapping session finished.`,
+                        embeds: [],
+                        components: [],
+                    });
+                }
+
+                return renderMappingSession(interaction, sessionId);
+            }
+        }
+
+        if (interaction.isButton()) {
+            const parts = interaction.customId.split(':');
+            if (parts[0] === 'role-map' && (parts[1] === 'skip' || parts[1] === 'done')) {
+                const sessionId = parts[2];
+                const session = committeeMapSessions.get(sessionId);
+                if (!session) {
+                    return interaction.update({ content: 'This mapping session has ended.', components: [], embeds: [] });
+                }
+                if (interaction.user.id !== session.userId) {
+                    return interaction.reply({ content: 'This mapping session is not yours.', ephemeral: true });
+                }
+
+                if (parts[1] === 'done') {
+                    if (session.kind === 'ecouncil' && !getEcouncilRoleId()) {
+                        return interaction.update({ content: 'Select a role before finishing the ECouncil mapping session.', components: buildMappingSessionComponents(sessionId, session), embeds: [buildMappingSessionEmbed(session)] });
+                    }
+                    finishMappingSession(sessionId);
+                    return interaction.update({
+                        content: `${mappingKindLabel(session.kind)} mapping session finished.`,
+                        embeds: [],
+                        components: [],
+                    });
+                }
+
+                session.index += 1;
+                if (session.index >= session.items.length) {
+                    finishMappingSession(sessionId);
+                    return interaction.update({
+                        content: `${mappingKindLabel(session.kind)} mapping session finished.`,
+                        embeds: [],
+                        components: [],
+                    });
+                }
+
+                return renderMappingSession(interaction, sessionId);
+            }
+        }
+
         // Buttons (Start / Approve / Reject)
         if (interaction.isButton()) {
             const parts = interaction.customId.split(':');
@@ -541,6 +1210,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 // Try to resolve the Discord user/channel by our store
                 let link =
                     getByPendingId(pendingId) || (emailFromButton ? getByEmail(emailFromButton) : null);
+
+                if (action === 'approve' && link) {
+                    rememberDbId(pendingId, {
+                        userId: link.userId,
+                        email: link.email || emailFromButton || '',
+                        channelId: link.channelId || null,
+                    });
+                }
 
                 if (action === 'reject') {
                     // Disable buttons on the message so nobody double-clicks
@@ -620,6 +1297,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return interaction.reply({ content: 'Please enter a valid email.', ephemeral: true });
                 }
 
+                if (getByEmail(email)) {
+                    return interaction.reply({
+                        content: 'That email is already registered. Please contact a mod if you need help.',
+                        ephemeral: true,
+                    });
+                }
+
                 const channelId = interaction.channel?.id || null;
 
                 await interaction.deferReply({ ephemeral: true });
@@ -648,7 +1332,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 } catch { }
 
                 // Steps guide to temp channel
-                await postStepsGuide(interaction.channel);
+                if (interaction.channel) {
+                    await postStepsGuide(interaction.channel);
+                }
                 await interaction.editReply(
                     ok
                         ? 'Invite sent! Check your email and follow the steps above.'
@@ -672,7 +1358,14 @@ client.on(Events.MessageCreate, async (msg) => {
         if (!msg.guild || msg.author.bot) return;
         const wait = awaitingPfp.get(msg.author.id);
         if (!wait) return;
-        if (msg.channel.id !== wait.channelId) return;
+        const expectedChannel = wait.channelId
+            ? msg.guild.channels.cache.get(wait.channelId) || await msg.guild.channels.fetch(wait.channelId).catch(() => null)
+            : null;
+        if (!expectedChannel) {
+            awaitingPfp.delete(msg.author.id);
+            return;
+        }
+        if (msg.channel.id !== expectedChannel.id) return;
 
         const attach = msg.attachments.first();
         if (!attach) return; // ignore non-attachments
@@ -704,18 +1397,12 @@ client.on(Events.MessageCreate, async (msg) => {
         if (welcome) await welcome.send({ embeds: [embed], files }).catch(() => { });
 
         // Role assignments (remove pending, add status role or default)
-        const statusRoleId = wait.apiMember ? statusRoleIdFrom(wait.apiMember) : '';
         await gm.roles.remove(PENDING_ROLE_ID).catch(() => { });
-        let appliedRole = false;
-        if (statusRoleId) {
-            await gm.roles.add(statusRoleId).catch(() => { });
-            appliedRole = true;
-        } else if (DEFAULT_VERIFIED_ROLE_ID) {
+        const roleChanges = await syncMemberRoles(gm, wait.apiMember || {});
+        let appliedRole = roleChanges.added.some((roleId) => managedStatusRoleIds().includes(roleId));
+        if (!appliedRole && DEFAULT_VERIFIED_ROLE_ID) {
             await gm.roles.add(DEFAULT_VERIFIED_ROLE_ID).catch(() => { });
             appliedRole = true;
-        }
-        if (wait.apiMember?.isECouncil && ECOUNCIL_ROLE_ID) {
-            await gm.roles.add(ECOUNCIL_ROLE_ID).catch(() => { });
         }
 
         awaitingPfp.delete(msg.author.id);
@@ -813,6 +1500,29 @@ async function pollPendingInvitesAndNotify() {
 function schedulePendingChecker() {
     pollPendingInvitesAndNotify();
     setInterval(pollPendingInvitesAndNotify, PENDING_POLL_MS);
+}
+
+async function runScheduledRoleSync(source = 'interval') {
+    if (roleSyncInProgress) return;
+    roleSyncInProgress = true;
+    try {
+        const guild = await client.guilds.fetch(GUILD_ID);
+        const summary = await runFullRoleSync(guild);
+        logRoleSyncSummary(summary, source);
+    } catch (err) {
+        console.error(`[role-sync:${source}] error:`, err);
+    } finally {
+        roleSyncInProgress = false;
+    }
+}
+
+function scheduleRoleSyncChecker() {
+    runScheduledRoleSync('startup');
+    if (Number.isFinite(ROLE_SYNC_INTERVAL_MS) && ROLE_SYNC_INTERVAL_MS > 0) {
+        setInterval(() => {
+            runScheduledRoleSync('interval');
+        }, ROLE_SYNC_INTERVAL_MS);
+    }
 }
 
 // ---------------- Boot ----------------

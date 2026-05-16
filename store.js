@@ -10,6 +10,11 @@ let cache = {
     userToEmail: {},          // userId -> email
     inviteIdToDiscord: {},    // inviteId ('inv_*') -> { userId, email, channelId, savedAt }
     pendingIdToDiscord: {},   // pending DB id -> { userId, email, channelId, savedAt }
+    committeeNameToRoleId: {}, // committee name -> Discord role ID
+    statusNameToRoleId: {},   // status string -> Discord role ID
+    ecouncilRoleId: '',       // Discord role ID for ECouncil members
+    dbIdToDiscord: {},        // member DB _id -> { userId, email, channelId, savedAt }
+    bootstrapCompleted: false,
 };
 
 function debounce(fn, ms) {
@@ -85,6 +90,123 @@ export function getByUserId(userId) {
 export function getByPendingId(pendingId) {
     if (!pendingId) return null;
     return cache.pendingIdToDiscord[String(pendingId)] || null;
+}
+
+export function rememberDbId(dbId, { userId, email, channelId } = {}) {
+    const key = String(dbId || '').trim();
+    const mappedUserId = String(userId || '').trim();
+    if (!key || !mappedUserId) return false;
+    cache.dbIdToDiscord[key] = {
+        userId: mappedUserId,
+        email: email ? String(email).trim().toLowerCase() : '',
+        channelId: channelId || null,
+        savedAt: Date.now(),
+    };
+    save();
+    return true;
+}
+
+export function getByDbId(dbId) {
+    if (!dbId) return null;
+    return cache.dbIdToDiscord[String(dbId).trim()] || null;
+}
+
+function normalizeCommitteeName(name) {
+    return String(name || '').trim();
+}
+
+export function rememberCommitteeMapping(committeeName, roleId) {
+    const key = normalizeCommitteeName(committeeName);
+    const value = String(roleId || '').trim();
+    if (!key || !value) return false;
+    cache.committeeNameToRoleId[key] = value;
+    save();
+    return true;
+}
+
+export function getCommitteeRoleId(committeeName) {
+    const key = normalizeCommitteeName(committeeName);
+    if (!key) return null;
+    return cache.committeeNameToRoleId[key] || null;
+}
+
+export function getAllCommitteeMappings() {
+    return { ...cache.committeeNameToRoleId };
+}
+
+export function removeCommitteeMapping(committeeName) {
+    const key = normalizeCommitteeName(committeeName);
+    if (!key || !cache.committeeNameToRoleId[key]) return false;
+    delete cache.committeeNameToRoleId[key];
+    save();
+    return true;
+}
+
+export function getCommitteeRoleIds() {
+    return [...new Set(Object.values(cache.committeeNameToRoleId).filter(Boolean))];
+}
+
+export function rememberStatusMapping(statusName, roleId) {
+    const key = String(statusName || '').trim();
+    const value = String(roleId || '').trim();
+    if (!key || !value) return false;
+    cache.statusNameToRoleId[key] = value;
+    save();
+    return true;
+}
+
+export function getStatusRoleId(statusName) {
+    const key = String(statusName || '').trim();
+    if (!key) return null;
+    return cache.statusNameToRoleId[key] || null;
+}
+
+export function getAllStatusMappings() {
+    return { ...cache.statusNameToRoleId };
+}
+
+export function removeStatusMapping(statusName) {
+    const key = String(statusName || '').trim();
+    if (!key || !cache.statusNameToRoleId[key]) return false;
+    delete cache.statusNameToRoleId[key];
+    save();
+    return true;
+}
+
+export function rememberEcouncilRole(roleId) {
+    const value = String(roleId || '').trim();
+    if (!value) return false;
+    cache.ecouncilRoleId = value;
+    save();
+    return true;
+}
+
+export function getEcouncilRoleId() {
+    return cache.ecouncilRoleId || '';
+}
+
+export function removeEcouncilRole() {
+    if (!cache.ecouncilRoleId) return false;
+    cache.ecouncilRoleId = '';
+    save();
+    return true;
+}
+
+export function getManagedRoleIds() {
+    return [
+        ...getCommitteeRoleIds(),
+        ...Object.values(cache.statusNameToRoleId).filter(Boolean),
+        cache.ecouncilRoleId,
+    ].filter(Boolean);
+}
+
+export function markBootstrapCompleted() {
+    cache.bootstrapCompleted = true;
+    save();
+}
+
+export function isBootstrapCompleted() {
+    return Boolean(cache.bootstrapCompleted);
 }
 
 // Find the most recent invite mapping around a timestamp window
